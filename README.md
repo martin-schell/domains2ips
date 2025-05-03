@@ -32,7 +32,6 @@ This script generates three files:
 185.125.190.82
 185.125.190.83
 ```
-
 **ipv6.out**
 ```
 2620:2d:4000:1::101
@@ -42,7 +41,6 @@ This script generates three files:
 2620:2d:4002:1::102
 2620:2d:4002:1::103
 ```
-
 **logfile**
 ```
 2025-05-02 18:14:29 [DEBUG] security.ubuntu.com: 185.125.190.81
@@ -87,3 +85,18 @@ sed -i '/^$/d' "$OUT_FILE_IPV6"
 ```
 
 `sort -t . -k1,1n -k2,2n -k3,3n -k4,4n -o "$OUT_FILE_IPV4" "$OUT_FILE_IPV4"` sorts the IPv4 addresses in a ascending order and replaces the content of the output file with the sorted list.
+
+In case of some domains, the output without `grep` includes a domain, too.
+
+```sh
+feeds.transistor.fm.cdn.cloudflare.net.
+104.22.52.147
+172.67.13.71
+104.22.53.147
+```
+
+Therefore, the output of `dig` will be filtered to get only the addresses.
+
+```sh
+ipv4s=$(dig +short A feeds.transistor.fm | grep -Eo '^[0-9.]+$')
+```
