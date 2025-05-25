@@ -1,3 +1,6 @@
-*.out
-*.log
-*.txt
+# Ignore everything
+*
+# Except of ...
+!*.sh
+!.gitignore
+!README

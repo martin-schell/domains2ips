@@ -1,11 +1,21 @@
-#!/usr/bin/env bash                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
-
+#!/usr/bin/env bash
 # Read domains from file and write the resolved addresses to a file for IPv4 / IPv6.
+
+SCRIPT_DIR=$(dirname "$(realpath "$0")")
+SCRIPTNAME=$(basename "$0" | cut -d'.' -f1)
+LOG_FILE="$SCRIPT_DIR/$SCRIPTNAME".log
+
+function file_ends_with_newline() {
+    [[ $(tail -c1 "$1" | wc -l) -gt 0 ]]
+}
 
 usage() {
   echo "Usage: $0"
-  echo "-i, --input <file>  Read file with domains, separated by newline"
-  echo "-h, --help          Print usage"
+  echo "-i, --input <file>    Read file with domains, separated by newline"
+  echo "-h, --help            Print usage"
+  echo "-o, --output <file>   Output file with addresses, separated by newline"
+  echo "-6                    Optional parameter: Resolve domains to IPv6 (default: IPv4)."
+  echo "-v, --verbose         Verbose output"
 }
 
 log() {
@@ -17,12 +27,44 @@ log() {
     echo "$TIMESTAMP [$LEVEL] $MESSAGE" >> "$LOG_FILE"
 }
 
+declare -a domains
+
+record=A
+pattern='^[0-9.]+$'
+
+# Check if no parameters were passed
+if [ $# -eq 0 ]; then
+    echo "Error: No arguments provided."
+    usage
+    exit 1
+fi
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -i | --input)
+      if [[ -z "$2" || "$2" == --* ]]; then
+        echo "Error: -f, --file requires a value."
+        exit 1
+      elif [ ! -f "$2" ]; then
+        echo "ERROR" "Input file $2 does not exist" | tee log
+        exit 1
+      fi
       in_file="$2"
       shift 2
+      ;;
+    -6)
+      record=AAAA
+      pattern='^[0-9a-fA-F:]+$'
+      shift 1
+      ;;
+    -o | --output)
+      out_file="$2"
+      shift 2
+      ;;
+    -v | --verbose)
+      verbose=true
+      shift 1
       ;;
     -h | --help)
       usage
@@ -36,60 +78,74 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Check passed values
-if [ -z "$in_file" ]; then
-  echo "Error: Input file missing."
-  usage
-  exit 1
-elif [ ! -f "$in_file" ]; then
-  echo "Error: Input file not found."
-  exit 1
+if [[ -z $out_file ]]; then
+  out_file=$(basename "$in_file" | cut -d'.' -f1).out
 fi
 
-OUT_FILE_IPV4=ipv4.out
-OUT_FILE_IPV6=ipv6.out
-LOG_FILE=$(basename "$0").log
+log "INFO" "Output file: $out_file" 
+log "INFO" "Input file: $in_file"
 
-# Clear the output files
-echo "" > "$OUT_FILE_IPV4"
-echo "" > "$OUT_FILE_IPV6"
-# Clear the log file
-echo "" > "$LOG_FILE"
+if $verbose; then
+  echo "DEBUG" "LOGFILE: $LOG_FILE"
+  log "DEBUG" "Record: $record"
+fi
 
-# Read each line of input file
-while IFS= read -r domain; do
-  resolved=false
+log "INFO" "--- Clear output file ---"
+echo "" > "$out_file"
 
-  # Add IPv4 in IPv4 output file
-  ipv4s=$(dig +short A "$domain" | grep -Eo '^[0-9.]+$')
-  if [ -n "$ipv4s" ]; then
-    while IFS= read -r ip; do
-      log "DEBUG" "$domain: $ip"
-      echo "$ip" >> $OUT_FILE_IPV4
-    done <<< "$ipv4s"
-    resolved=true
+# If the file does not end with a newline, then the last line will be ignored in the while loop.
+if ! file_ends_with_newline "$in_file"
+then
+  log "INFO" "Append newline in $in_file"
+  echo "" >> "$in_file"
+fi
+
+# Create array with domains
+while IFS= read -r line; do
+
+  # If line is not empty
+  if [ -n "$line" ]; then
+    domains+=("$line")
   fi
- 
-# Add IPv4 in IPv6 output file
-  ipv6s=$(dig +short AAAA "$domain" | grep -Eo '^[0-9a-fA-F:]+$')
-  if [ -n "$ipv6s" ]; then
-    while IFS= read -r ip; do
-      log "DEBUG" "$domain: $ip"
-      echo "$ip" >> $OUT_FILE_IPV6
-    done <<< "$ipv6s"
-    resolved=true
-  fi
- 
-  # Fallback
-  if [ "$resolved" = false ]; then
-    log "DEBUG" "$domain: resolution failed"
-  fi
+
 done < "$in_file"
 
+log "INFO" "--- Resolve domains ---"
+for domain in "${domains[@]}";
+do
+
+  if $verbose; then
+    log "DEBUG" "Domain: $domain"
+  fi
+
+  resolved=false
+
+  ips=$(dig +short $record "$domain" | grep -Eo "$pattern")
+
+  if $verbose; then
+    log "DEBUG" "Resolved IP addresses: $ips"
+  fi
+  
+  log "INFO" "--- Add resolved addresses of $domain in $out_file ---"
+  if [ -n "$ips" ]; then
+    while IFS= read -r ip; do
+      
+      if $verbose; then
+        log "DEBUG" "$domain -> $ip"
+      fi
+      
+      echo "$ip" >> "$out_file"
+    done <<< "$ips"
+    resolved=true
+  fi
+ 
+  if [ "$resolved" = false ]; then
+    log "INFO" "Resolving $record for $domain returned no addresses"
+  fi
+done
+
 # Remove empty line
-sed -i '/^$/d' "$OUT_FILE_IPV4"
-sed -i '/^$/d' "$OUT_FILE_IPV6"
+sed -i '/^$/d' "$out_file"
 
 # Sort and remove duplicates
-sort -t . -k1,1n -k2,2n -k3,3n -k4,4n -o "$OUT_FILE_IPV4" "$OUT_FILE_IPV4"
-sort -u -o "$OUT_FILE_IPV6" "$OUT_FILE_IPV6"
+sort -u -o "$out_file" "$out_file"
