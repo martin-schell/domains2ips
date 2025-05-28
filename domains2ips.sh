@@ -4,6 +4,7 @@
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 SCRIPTNAME=$(basename "$0" | cut -d'.' -f1)
 LOG_FILE="$SCRIPT_DIR/$SCRIPTNAME".log
+DOMAIN_PATTERN='^[a-z0-9-]+(\.[a-z0-9-]+)+$'
 
 function file_ends_with_newline() {
     [[ $(tail -c1 "$1" | wc -l) -gt 0 ]]
@@ -30,7 +31,7 @@ log() {
 declare -a domains
 
 record=A
-pattern='^[0-9.]+$'
+ip_pattern='^[0-9.]+$'
 
 # Check if no parameters were passed
 if [ $# -eq 0 ]; then
@@ -55,7 +56,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -6)
       record=AAAA
-      pattern='^[0-9a-fA-F:]+$'
+      ip_pattern='^[0-9a-fA-F:]+$'
       shift 1
       ;;
     -o | --output)
@@ -100,11 +101,15 @@ then
   echo "" >> "$in_file"
 fi
 
-# Create array with domains
+log "INFO" "--- Read domains from $in_file ---"
 while IFS= read -r line; do
-
-  # If line is not empty
-  if [ -n "$line" ]; then
+  ((i++))
+  if [ -z "$line" ]; then
+    log "INFO" "Line $i is empty and will be ignored"
+  elif [[ ! "$line" =~ $DOMAIN_PATTERN ]]; then
+    log "INFO" "Entry $line in line $i is invalid and will be ignored"
+  else
+    log "INFO" "Add $line in array"
     domains+=("$line")
   fi
 
@@ -120,7 +125,7 @@ do
 
   resolved=false
 
-  ips=$(dig +short $record "$domain" | grep -Eo "$pattern")
+  ips=$(dig +short $record "$domain" | grep -Eo "$ip_pattern")
 
   if $verbose; then
     log "DEBUG" "Resolved IP addresses: $ips"
