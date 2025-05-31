@@ -3,8 +3,12 @@
 
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 SCRIPTNAME=$(basename "$0" | cut -d'.' -f1)
-LOG_FILE="$SCRIPT_DIR/$SCRIPTNAME".log
 DOMAIN_PATTERN='^[a-z0-9-]+(\.[a-z0-9-]+)+$'
+
+# If LOG_FILE is set in parent script
+if [ -z "$LOG_FILE" ]; then
+  LOG_FILE="$SCRIPT_DIR/$SCRIPTNAME".log
+fi
 
 function file_ends_with_newline() {
     [[ $(tail -c1 "$1" | wc -l) -gt 0 ]]
@@ -87,7 +91,7 @@ log "INFO" "Output file: $out_file"
 log "INFO" "Input file: $in_file"
 
 if $verbose; then
-  echo "DEBUG" "LOGFILE: $LOG_FILE"
+  echo "DEBUG" "LOGFILE of $SCRIPTNAME: $LOG_FILE"
   log "DEBUG" "Record: $record"
 fi
 
